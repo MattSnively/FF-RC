@@ -710,6 +710,7 @@ button:focus-visible, .input:focus-visible, a:focus-visible { outline:2px solid 
           <div class="pp-tiles">
             <div class="stat-tile"><div class="k">Projected PPG</div><div class="v tnum" id="pp-proj">—</div></div>
             <div class="stat-tile"><div class="k">Actual PPG</div><div class="v tnum" id="pp-ppg">—</div></div>
+            <div class="stat-tile" id="pp-delta-tile"><div class="k">Δ vs proj</div><div class="v tnum" id="pp-delta">—</div></div>
             <div class="stat-tile" id="pp-beat-tile"><div class="k" id="pp-beat-k">Weeks beat preseason</div><div class="v tnum" id="pp-beat">—</div><div class="sub" id="pp-beat-sub"></div></div>
             <div class="stat-tile" style="border-top-color:var(--info)"><div class="k">Volatility (σ)</div><div class="v tnum" id="pp-sd">—</div></div>
           </div>
@@ -1628,7 +1629,11 @@ function selectPlayer(name) {
   document.getElementById('pp-team').textContent = `${p.t} · ${p.g} games`;
   document.getElementById('pp-pos').innerHTML = `<span class="pos-badge pos-${p.p}">${p.p}</span>`;
   const s = p.pct >= 0 ? '+' : '';
-  document.getElementById('pp-trend').innerHTML = `<span class="badge ${p.pct >= 0 ? 'badge-pos' : 'badge-neg'}">${p.pct >= 0 ? '▲' : '▼'} ${s}${p.pct.toFixed(1)}% vs proj</span>`;
+  const dPpg = p.ppg - p.proj;
+  const dS = dPpg >= 0 ? '+' : '';
+  document.getElementById('pp-trend').innerHTML = `<span class="badge ${p.pct >= 0 ? 'badge-pos' : 'badge-neg'}">${p.pct >= 0 ? '▲' : '▼'} ${s}${p.pct.toFixed(1)}% (${dS}${dPpg.toFixed(1)} ppg) vs proj</span>`;
+  document.getElementById('pp-delta-tile').style.borderTopColor = dPpg >= 0 ? cssVar('--pos') : cssVar('--neg');
+  document.getElementById('pp-delta').innerHTML = `<span class="delta ${dPpg >= 0 ? 'up' : 'down'}">${dS}${dPpg.toFixed(1)}</span>`;
   document.getElementById('pp-proj').textContent = p.proj.toFixed(1);
   document.getElementById('pp-ppg').textContent = p.ppg.toFixed(1);
   document.getElementById('pp-sd').textContent = p.sd.toFixed(1);
