@@ -860,7 +860,7 @@ button:focus-visible, .input:focus-visible, a:focus-visible { outline:2px solid 
           </div>
         </div>
         <div class="roster-search" style="padding:0 0 var(--s-3) 0;border-bottom:none">
-          <input class="input" id="slope-q" placeholder="Highlight a player…" oninput="slopeHighlight()">
+          <input class="input" id="slope-q" placeholder="Search to pull in a player outside the top 32…" oninput="slopeSearch()">
         </div>
         <div class="games-filter">
           <label for="slope-games-slider">Min games played</label>
@@ -868,7 +868,7 @@ button:focus-visible, .input:focus-visible, a:focus-visible { outline:2px solid 
           <span class="gf-val" id="slope-games-val">8+ games</span>
           <span class="gf-count" id="slope-games-count"></span>
         </div>
-        <p class="chart-explain">Showing the top <b id="slope-cap-label">32</b> by preseason rank within the position. <span id="slope-overflow-note"></span></p>
+        <p class="chart-explain">Showing the top <b id="slope-cap-label">32</b> by preseason rank within the position. Click any line to highlight that player. <span id="slope-overflow-note"></span></p>
         <div class="chart-box tall"><canvas id="slope-chart"></canvas></div>
       </div>
     </div>
@@ -1793,6 +1793,8 @@ function buildPlayerChart(p) {
 
 // ── TAB 06 · DRAFT IMPACT (slope chart: preseason vs. final positional rank) ──
 let slopeChart, slopePos = 'QB', slopeCap = 32, slopeMinGames = 8;
+let slopeSelected = null; // name of the currently click-highlighted player, or null
+let slopeExtra = null;    // a player pulled in via search despite being outside the top-32 cap
 const POS_FULL = { QB: 'Quarterbacks', RB: 'Running backs', WR: 'Wide receivers', TE: 'Tight ends' };
 function lastName(n) { const parts = n.trim().split(' '); return parts[parts.length - 1]; }
 // Rank players at a position by preseason projected total, and by actual total —
@@ -1814,12 +1816,44 @@ function slopeFilter(btn) {
   slopePos = btn.dataset.pos;
   document.querySelectorAll('#slope-pos-seg button').forEach(b => b.classList.toggle('active', b === btn));
   document.getElementById('slope-q').value = '';
+  slopeSelected = null;
+  slopeExtra = null;
   buildSlopeChart();
 }
-function slopeHighlight() { buildSlopeChart(); }
 function slopeGamesChange() {
   slopeMinGames = parseInt(document.getElementById('slope-games-slider').value, 10);
   document.getElementById('slope-games-val').textContent = `${slopeMinGames}+ games`;
+  buildSlopeChart();
+}
+// Search only adds an off-cap player to the chart (and selects them) — selection for
+// anyone already on screen is click-driven, handled in the chart's onClick below.
+function slopeSearch() {
+  const all = computePosRanks(slopePos);
+  const q = (document.getElementById('slope-q').value || '').trim().toLowerCase();
+  const note = document.getElementById('slope-overflow-note');
+  if (!q) {
+    slopeExtra = null;
+    note.textContent = '';
+    buildSlopeChart();
+    return;
+  }
+  const match = all.find(r => r.n.toLowerCase().includes(q)) || null;
+  if (!match) {
+    const posPool = PLAYERS.filter(p => p.p === slopePos);
+    const excluded = posPool.find(p => p.n.toLowerCase().includes(q));
+    slopeExtra = null;
+    note.textContent = excluded
+      ? `${excluded.n} only played ${excluded.g} games — below the current ${slopeMinGames}+ filter.`
+      : `No ${slopePos} match for "${q}".`;
+  } else if (match.pre > slopeCap) {
+    slopeExtra = match;
+    slopeSelected = match.n;
+    note.textContent = `Pulled in ${match.n} — preseason ${slopePos}${match.pre}, outside the top ${slopeCap}.`;
+  } else {
+    slopeExtra = null;
+    slopeSelected = match.n;
+    note.textContent = `${match.n} is already shown below.`;
+  }
   buildSlopeChart();
 }
 function buildSlopeChart() {
@@ -1829,45 +1863,33 @@ function buildSlopeChart() {
   const shown = all.filter(r => r.pre <= slopeCap);
   document.getElementById('slope-games-count').textContent =
     `${all.length} of ${posPool.length} ${slopePos}s qualify`;
-  const q = (document.getElementById('slope-q').value || '').trim().toLowerCase();
-  const note = document.getElementById('slope-overflow-note');
-  let highlight = null;
-  if (q) {
-    highlight = all.find(r => r.n.toLowerCase().includes(q)) || null;
-    if (!highlight) {
-      const excluded = posPool.find(p => p.n.toLowerCase().includes(q));
-      note.textContent = excluded
-        ? `${excluded.n} only played ${excluded.g} games — below the current ${slopeMinGames}+ filter.`
-        : `No ${slopePos} match for "${q}".`;
-    }
-    else if (highlight.pre > slopeCap) note.textContent = `Highlighting ${highlight.n} — preseason ${slopePos}${highlight.pre}, outside the top ${slopeCap} shown below.`;
-    else note.textContent = `Highlighting ${highlight.n}.`;
-  } else {
-    note.textContent = '';
-  }
-  const rows = (highlight && !shown.includes(highlight)) ? [...shown, highlight] : shown;
+  // Guard against a selected/extra player no longer qualifying after a filter change.
+  if (slopeSelected && !all.find(r => r.n === slopeSelected)) slopeSelected = null;
+  if (slopeExtra && !all.find(r => r.n === slopeExtra.n)) slopeExtra = null;
+
+  const rows = (slopeExtra && !shown.find(r => r.n === slopeExtra.n)) ? [...shown, slopeExtra] : shown;
   document.getElementById('slope-title').textContent = POS_FULL[slopePos];
 
   const maxRank = Math.max(1, ...rows.map(r => Math.max(r.pre, r.fin)));
   const datasets = rows.map(r => {
-    const isHi = highlight && r.n === highlight.n;
+    const isHi = slopeSelected && r.n === slopeSelected;
     const improved = r.fin < r.pre, same = r.fin === r.pre;
     const color = same ? ink.tick : (improved ? ink.pos : ink.neg);
     return {
       label: r.n, meta: r, data: [r.pre, r.fin], tension: 0,
       borderColor: isHi ? ink.highlight : color,
       borderWidth: isHi ? 4 : 1.5,
-      borderDash: isHi ? [] : [],
       pointRadius: isHi ? 5 : 2.5,
+      pointHoverRadius: isHi ? 6 : 4,
       pointBackgroundColor: isHi ? ink.highlight : color,
       pointBorderColor: isHi ? ink.highlight : color,
       order: isHi ? 0 : 1,
       datalabels: { display: true }
     };
   });
-  // Dim non-highlighted lines when a highlight is active, so the searched player pops.
-  if (highlight) {
-    datasets.forEach(d => { if (d.meta.n !== highlight.n) { d.borderColor += '40'; d.pointBackgroundColor += '40'; d.pointBorderColor += '40'; } });
+  // Dim non-selected lines when something's selected, so it pops.
+  if (slopeSelected) {
+    datasets.forEach(d => { if (d.meta.n !== slopeSelected) { d.borderColor += '40'; d.pointBackgroundColor += '40'; d.pointBorderColor += '40'; } });
   }
 
   if (slopeChart) slopeChart.destroy();
@@ -1876,7 +1898,17 @@ function buildSlopeChart() {
     data: { labels: ['PRESEASON', 'FINAL'], datasets },
     options: {
       responsive: true, maintainAspectRatio: false,
-      layout: { padding: { left: 90, right: 90 } },
+      layout: { padding: { left: 150, right: 150 } },
+      interaction: { mode: 'nearest', intersect: true },
+      onClick: (evt, elements, chart) => {
+        if (!elements.length) return;
+        const name = chart.data.datasets[elements[0].datasetIndex].meta.n;
+        slopeSelected = (slopeSelected === name) ? null : name;
+        // Defer: destroying this chart synchronously inside its own click handler
+        // breaks Chart.js's in-progress event dispatch.
+        setTimeout(buildSlopeChart, 0);
+      },
+      onHover: (evt, elements) => { evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
       scales: {
         y: { reverse: true, min: 1, max: maxRank,
              ticks: { stepSize: 1, color: ink.tick, font: { family: "'JetBrains Mono'", size: 10 },
@@ -1890,7 +1922,7 @@ function buildSlopeChart() {
         legend: { display: false },
         datalabels: {
           color: ctx => ctx.dataset.borderColor,
-          font: { family: "'JetBrains Mono'", size: 10, weight: ctx => (highlight && ctx.dataset.meta.n === highlight.n) ? '700' : '400' },
+          font: { family: "'JetBrains Mono'", size: 10, weight: ctx => (slopeSelected && ctx.dataset.meta.n === slopeSelected) ? '700' : '400' },
           formatter: (value, ctx) => `${lastName(ctx.dataset.meta.n)} · ${slopePos}${value}`,
           align: ctx => ctx.dataIndex === 0 ? 'left' : 'right',
           anchor: 'center',
