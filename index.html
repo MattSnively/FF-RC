@@ -1571,13 +1571,14 @@ function renderInjury() {
   };
   document.getElementById('injury-body').innerHTML = INJURY.map(r => {
     const delta = r.actTot - r.projTot;
+    const pct = r.projTot > 0 ? (delta / r.projTot * 100) : 0;
     return `<tr>
       <td><span class="player-name">${r.n}</span><span class="player-meta">${r.t}</span></td>
       <td><span class="pos-badge pos-${r.p}">${r.p}</span></td>
       <td class="r mono tnum">${r.g}</td>
       <td class="r mono tnum">${r.projTot.toFixed(0)}</td>
       <td class="r mono tnum" style="color:var(--ink-strong)">${r.actTot.toFixed(0)}</td>
-      <td class="r"><span class="delta down">${delta.toFixed(0)}</span></td>
+      <td class="r"><span class="delta down">${delta.toFixed(0)} <span style="opacity:.7">(${pct.toFixed(0)}%)</span></span></td>
       <td class="r mono tnum">${r.ppg.toFixed(1)} / ${r.projPpg.toFixed(1)}</td>
       <td>${fmtHealth(r.ppg, r.projPpg)}</td>
     </tr>`;
