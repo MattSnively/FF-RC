@@ -1797,6 +1797,27 @@ let slopeSelected = null; // name of the currently click-highlighted player, or 
 let slopeExtra = null;    // a player pulled in via search despite being outside the top-32 cap
 const POS_FULL = { QB: 'Quarterbacks', RB: 'Running backs', WR: 'Wide receivers', TE: 'Tight ends' };
 function lastName(n) { const parts = n.trim().split(' '); return parts[parts.length - 1]; }
+// Shortest distance from point (px,py) to the line segment (x1,y1)-(x2,y2).
+function distToSegment(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  let t = lenSq === 0 ? 0 : ((px - x1) * dx + (py - y1) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  const cx = x1 + t * dx, cy = y1 + t * dy;
+  return Math.hypot(px - cx, py - cy);
+}
+// Find the slope-chart line whose 2-point segment is closest to (px,py), within
+// a generous pixel tolerance. Returns the dataset, or null if nothing is close enough.
+function nearestSlopeLine(chart, px, py, tolerance = 14) {
+  let best = null, bestDist = Infinity;
+  chart.data.datasets.forEach((ds, i) => {
+    const meta = chart.getDatasetMeta(i);
+    if (!meta.data[0] || !meta.data[1]) return;
+    const d = distToSegment(px, py, meta.data[0].x, meta.data[0].y, meta.data[1].x, meta.data[1].y);
+    if (d < bestDist) { bestDist = d; best = ds; }
+  });
+  return bestDist <= tolerance ? best : null;
+}
 // Rank players at a position by preseason projected total, and by actual total —
 // restricted to players who reached the games-played floor (excludes injury-shortened
 // seasons from both rankings, not just from the display, so nobody else's rank shifts
@@ -1881,6 +1902,7 @@ function buildSlopeChart() {
       borderWidth: isHi ? 4 : 1.5,
       pointRadius: isHi ? 5 : 2.5,
       pointHoverRadius: isHi ? 6 : 4,
+      pointHitRadius: 12,
       pointBackgroundColor: isHi ? ink.highlight : color,
       pointBorderColor: isHi ? ink.highlight : color,
       order: isHi ? 0 : 1,
@@ -1899,16 +1921,21 @@ function buildSlopeChart() {
     options: {
       responsive: true, maintainAspectRatio: false,
       layout: { padding: { left: 150, right: 150 } },
-      interaction: { mode: 'nearest', intersect: true },
-      onClick: (evt, elements, chart) => {
-        if (!elements.length) return;
-        const name = chart.data.datasets[elements[0].datasetIndex].meta.n;
-        slopeSelected = (slopeSelected === name) ? null : name;
+      // Each line has only 2 points (preseason, final), so Chart.js's built-in
+      // nearest-point hit-testing picks the wrong line when you click mid-segment
+      // instead of near an endpoint. Hit-test the actual line segments instead —
+      // click anywhere along a line, not just on its dots.
+      onClick: (evt, chartElements, chart) => {
+        const hit = nearestSlopeLine(chart, evt.x, evt.y);
+        if (!hit) return;
+        slopeSelected = (slopeSelected === hit.meta.n) ? null : hit.meta.n;
         // Defer: destroying this chart synchronously inside its own click handler
         // breaks Chart.js's in-progress event dispatch.
         setTimeout(buildSlopeChart, 0);
       },
-      onHover: (evt, elements) => { evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
+      onHover: (evt, chartElements, chart) => {
+        chart.canvas.style.cursor = nearestSlopeLine(chart, evt.x, evt.y) ? 'pointer' : 'default';
+      },
       scales: {
         y: { reverse: true, min: 1, max: maxRank,
              ticks: { stepSize: 1, color: ink.tick, font: { family: "'JetBrains Mono'", size: 10 },
