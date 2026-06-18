@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@400;600;700;800&family=Saira:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
 <style>
 /* ── TOKENS (from RC design system README) ───────────────────── */
 :root {
@@ -214,6 +215,12 @@ a { color:var(--primary); text-decoration:none; }
 .chart-head h3 { font-family:var(--font-display); font-weight:700; font-size:var(--fs-h3); text-transform:uppercase; color:var(--ink-strong); margin-top:4px; }
 .chart-box { position:relative; height:420px; }
 .chart-box.short { height:300px; }
+.chart-box.tall { height:900px; }
+.games-filter { display:flex; align-items:center; gap:var(--s-3); padding:0 0 var(--s-3) 0; flex-wrap:wrap; }
+.games-filter label { font-family:var(--font-display); font-weight:600; font-size:var(--fs-micro); text-transform:uppercase; letter-spacing:0.08em; color:var(--ink-muted); white-space:nowrap; }
+.games-filter input[type="range"] { flex:1; min-width:160px; max-width:320px; accent-color:var(--primary); height:4px; cursor:pointer; }
+.games-filter .gf-val { font-family:var(--font-mono); font-weight:700; color:var(--ink-strong); min-width:5.5em; }
+.games-filter .gf-count { font-size:var(--fs-sm); color:var(--ink-muted); }
 .dist-key { display:flex; gap:var(--s-4); justify-content:center; margin-top:var(--s-3); flex-wrap:wrap; }
 .dist-key .dk { display:inline-flex; align-items:center; gap:6px; font-family:var(--font-display); font-weight:600; font-size:var(--fs-micro); text-transform:uppercase; letter-spacing:0.08em; color:var(--ink-muted); }
 .dist-key .dk i { width:10px; height:10px; border-radius:50%; display:inline-block; }
@@ -415,6 +422,7 @@ button:focus-visible, .input:focus-visible, a:focus-visible { outline:2px solid 
     <button class="tab-btn" role="tab" aria-selected="false" data-tab="players" onclick="setTab(this)"><span class="tn">03</span>Player Mapping</button>
     <button class="tab-btn" role="tab" aria-selected="false" data-tab="table" onclick="setTab(this)"><span class="tn">04</span>Data Room</button>
     <button class="tab-btn" role="tab" aria-selected="false" data-tab="watch" onclick="setTab(this)"><span class="tn">05</span>2026 Watch</button>
+    <button class="tab-btn" role="tab" aria-selected="false" data-tab="draftimpact" onclick="setTab(this)"><span class="tn">06</span>Draft Impact</button>
   </div>
 </nav>
 
@@ -829,6 +837,44 @@ button:focus-visible, .input:focus-visible, a:focus-visible { outline:2px solid 
   </section>
 </div>
 
+<!-- ════════ TAB 06 · DRAFT IMPACT ════════ -->
+<div class="tab-panel" id="tab-draftimpact" role="tabpanel">
+  <section class="section">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="num">06.1 / DRAFT DAY VS. REALITY</span>
+        <h2>How draft-day rankings held up</h2>
+        <p>Every audited player ranked twice within their position: once by ESPN's preseason projection, once by how the season actually played out. A line that falls beat its draft slot; a line that rises got passed by players drafted behind it.</p>
+      </div>
+      <div class="chart-card">
+        <div class="chart-head">
+          <div>
+            <div class="kicker">Positional rank · preseason vs. final</div>
+            <h3 id="slope-title">Quarterbacks</h3>
+          </div>
+          <div class="seg" id="slope-pos-seg">
+            <button class="active" data-pos="QB" onclick="slopeFilter(this)">QB</button>
+            <button data-pos="RB" onclick="slopeFilter(this)">RB</button>
+            <button data-pos="WR" onclick="slopeFilter(this)">WR</button>
+            <button data-pos="TE" onclick="slopeFilter(this)">TE</button>
+          </div>
+        </div>
+        <div class="roster-search" style="padding:0 0 var(--s-3) 0;border-bottom:none">
+          <input class="input" id="slope-q" placeholder="Highlight a player…" oninput="slopeHighlight()">
+        </div>
+        <div class="games-filter">
+          <label for="slope-games-slider">Min games played</label>
+          <input type="range" id="slope-games-slider" min="8" max="17" value="8" step="1" oninput="slopeGamesChange()">
+          <span class="gf-val" id="slope-games-val">8+ games</span>
+          <span class="gf-count" id="slope-games-count"></span>
+        </div>
+        <p class="chart-explain">Showing the top <b id="slope-cap-label">32</b> by preseason rank within the position. <span id="slope-overflow-note"></span></p>
+        <div class="chart-box tall"><canvas id="slope-chart"></canvas></div>
+      </div>
+    </div>
+  </section>
+</div>
+
 <!-- ── FOOTER ─────────────────────────────────────────────────── -->
 <!-- ── PLAYER DETAIL MODAL ────────────────────────────────────── -->
 <div class="modal-overlay" id="player-modal" role="dialog" aria-modal="true" aria-labelledby="pm-name" onclick="if(event.target===this)closePlayerModal()">
@@ -970,6 +1016,7 @@ function buildTab(tab) {
   if (tab === 'outliers') { renderInjury(); renderLb(); }
   if (tab === 'players') { renderRoster(); selectPlayer(PLAYERS[0].n); }
   if (tab === 'table') { renderTable(); }
+  if (tab === 'draftimpact') { buildSlopeChart(); }
 }
 
 // ── TAB 01 CHARTS ─────────────────────────────────────────────
@@ -1744,6 +1791,130 @@ function buildPlayerChart(p) {
   });
 }
 
+// ── TAB 06 · DRAFT IMPACT (slope chart: preseason vs. final positional rank) ──
+let slopeChart, slopePos = 'QB', slopeCap = 32, slopeMinGames = 8;
+const POS_FULL = { QB: 'Quarterbacks', RB: 'Running backs', WR: 'Wide receivers', TE: 'Tight ends' };
+function lastName(n) { const parts = n.trim().split(' '); return parts[parts.length - 1]; }
+// Rank players at a position by preseason projected total, and by actual total —
+// restricted to players who reached the games-played floor (excludes injury-shortened
+// seasons from both rankings, not just from the display, so nobody else's rank shifts
+// because of an absent player still being counted).
+// Rank 1 = highest points. Returns the qualifying pool sorted by preseason rank.
+function computePosRanks(pos) {
+  const pool = PLAYERS.filter(p => p.p === pos && p.g >= slopeMinGames);
+  const byProj = [...pool].sort((a, b) => b.projTot - a.projTot);
+  const byAct = [...pool].sort((a, b) => b.tot - a.tot);
+  const preRank = new Map(byProj.map((p, i) => [p.n, i + 1]));
+  const finRank = new Map(byAct.map((p, i) => [p.n, i + 1]));
+  return pool
+    .map(p => ({ n: p.n, t: p.t, g: p.g, pre: preRank.get(p.n), fin: finRank.get(p.n) }))
+    .sort((a, b) => a.pre - b.pre);
+}
+function slopeFilter(btn) {
+  slopePos = btn.dataset.pos;
+  document.querySelectorAll('#slope-pos-seg button').forEach(b => b.classList.toggle('active', b === btn));
+  document.getElementById('slope-q').value = '';
+  buildSlopeChart();
+}
+function slopeHighlight() { buildSlopeChart(); }
+function slopeGamesChange() {
+  slopeMinGames = parseInt(document.getElementById('slope-games-slider').value, 10);
+  document.getElementById('slope-games-val').textContent = `${slopeMinGames}+ games`;
+  buildSlopeChart();
+}
+function buildSlopeChart() {
+  const ink = chartInk();
+  const posPool = PLAYERS.filter(p => p.p === slopePos);
+  const all = computePosRanks(slopePos);
+  const shown = all.filter(r => r.pre <= slopeCap);
+  document.getElementById('slope-games-count').textContent =
+    `${all.length} of ${posPool.length} ${slopePos}s qualify`;
+  const q = (document.getElementById('slope-q').value || '').trim().toLowerCase();
+  const note = document.getElementById('slope-overflow-note');
+  let highlight = null;
+  if (q) {
+    highlight = all.find(r => r.n.toLowerCase().includes(q)) || null;
+    if (!highlight) {
+      const excluded = posPool.find(p => p.n.toLowerCase().includes(q));
+      note.textContent = excluded
+        ? `${excluded.n} only played ${excluded.g} games — below the current ${slopeMinGames}+ filter.`
+        : `No ${slopePos} match for "${q}".`;
+    }
+    else if (highlight.pre > slopeCap) note.textContent = `Highlighting ${highlight.n} — preseason ${slopePos}${highlight.pre}, outside the top ${slopeCap} shown below.`;
+    else note.textContent = `Highlighting ${highlight.n}.`;
+  } else {
+    note.textContent = '';
+  }
+  const rows = (highlight && !shown.includes(highlight)) ? [...shown, highlight] : shown;
+  document.getElementById('slope-title').textContent = POS_FULL[slopePos];
+
+  const maxRank = Math.max(1, ...rows.map(r => Math.max(r.pre, r.fin)));
+  const datasets = rows.map(r => {
+    const isHi = highlight && r.n === highlight.n;
+    const improved = r.fin < r.pre, same = r.fin === r.pre;
+    const color = same ? ink.tick : (improved ? ink.pos : ink.neg);
+    return {
+      label: r.n, meta: r, data: [r.pre, r.fin], tension: 0,
+      borderColor: isHi ? ink.highlight : color,
+      borderWidth: isHi ? 4 : 1.5,
+      borderDash: isHi ? [] : [],
+      pointRadius: isHi ? 5 : 2.5,
+      pointBackgroundColor: isHi ? ink.highlight : color,
+      pointBorderColor: isHi ? ink.highlight : color,
+      order: isHi ? 0 : 1,
+      datalabels: { display: true }
+    };
+  });
+  // Dim non-highlighted lines when a highlight is active, so the searched player pops.
+  if (highlight) {
+    datasets.forEach(d => { if (d.meta.n !== highlight.n) { d.borderColor += '40'; d.pointBackgroundColor += '40'; d.pointBorderColor += '40'; } });
+  }
+
+  if (slopeChart) slopeChart.destroy();
+  slopeChart = new Chart(document.getElementById('slope-chart'), {
+    type: 'line',
+    data: { labels: ['PRESEASON', 'FINAL'], datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      layout: { padding: { left: 90, right: 90 } },
+      scales: {
+        y: { reverse: true, min: 1, max: maxRank,
+             ticks: { stepSize: 1, color: ink.tick, font: { family: "'JetBrains Mono'", size: 10 },
+                      callback: v => Number.isInteger(v) ? slopePos + v : '' },
+             grid: { color: ink.grid },
+             title: { display: true, text: 'POSITIONAL RANK', color: ink.tick, font: { family: "'Saira Condensed'", weight: 700 } } },
+        x: { position: 'top', grid: { display: false },
+             ticks: { color: ink.strong, font: { family: "'Saira Condensed'", weight: 700, size: 13 } } }
+      },
+      plugins: {
+        legend: { display: false },
+        datalabels: {
+          color: ctx => ctx.dataset.borderColor,
+          font: { family: "'JetBrains Mono'", size: 10, weight: ctx => (highlight && ctx.dataset.meta.n === highlight.n) ? '700' : '400' },
+          formatter: (value, ctx) => `${lastName(ctx.dataset.meta.n)} · ${slopePos}${value}`,
+          align: ctx => ctx.dataIndex === 0 ? 'left' : 'right',
+          anchor: 'center',
+          offset: 6,
+          clip: false
+        },
+        tooltip: {
+          backgroundColor: ink.surface, titleColor: ink.strong, bodyColor: ink.tick, borderColor: ink.grid, borderWidth: 1,
+          callbacks: {
+            title: items => items[0].dataset.meta.n,
+            label: c => {
+              const r = c.dataset.meta;
+              const moved = r.pre - r.fin;
+              const verb = moved > 0 ? `rose ${moved}` : moved < 0 ? `fell ${Math.abs(moved)}` : 'held steady';
+              return c.dataIndex === 0 ? `Preseason: ${slopePos}${r.pre}` : `Final: ${slopePos}${r.fin} (${verb})`;
+            }
+          }
+        }
+      }
+    },
+    plugins: [ChartDataLabels]
+  });
+}
+
 // ── THEME RESTYLE ─────────────────────────────────────────────
 function restyleCharts() {
   if (builtTabs.has("audit")) { buildDist(); buildTier(); buildPos(); buildWeekly(); }
@@ -1751,6 +1922,7 @@ function restyleCharts() {
     const p = PLAYERS.find(x => x.n === currentPlayer);
     if (p) buildPlayerChart(p);
   }
+  if (builtTabs.has('draftimpact')) buildSlopeChart();
 }
 
 // ── INIT ──────────────────────────────────────────────────────
